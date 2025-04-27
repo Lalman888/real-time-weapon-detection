@@ -32512,6 +32512,7 @@ async function sendToGemini(dets) {
   const GEMINI_API_KEY = "AIzaSyA5_ePvFmOvx8Stt9IdfPMgP7J01dCRlJk";
   const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
+  await generateStudentAlert(labels);
   // --- Correct Request Body Structure ---
   const requestBody = {
     contents: [
@@ -32524,7 +32525,7 @@ async function sendToGemini(dets) {
   Using that context, produce a **detailed, structured response** with the following sections:
   
   1. **Detection Summary**  
-     - List each detected item, its approximate location (building/zone), camera ID, and timestamp.
+     - List each detected item, its approximate location (building/zone), camera ID, and timestamp in ist.
   
   2. **Immediate Response Steps**  
      - Step-by-step instructions for on-site security (approach protocols, safe distances, equipment to use).
@@ -32606,11 +32607,73 @@ async function sendToGemini(dets) {
         : "No valid AI response content received.";
     const html = marked.parse(responseText.trim());
     aiText.innerHTML = html;
+    
+    
   } catch (err) {
     // Update UI and log the error
     aiText.textContent = "AI request failed.";
     console.error("Error during Gemini API call:", err);
     // You could potentially display err.message in the UI for more specific feedback
     // aiText.textContent = `AI request failed: ${err.message}`;
+  }
+}
+
+async function sendTelegramMessage(text) {
+  const BOT_TOKEN = '8189478565:AAGqvyVkS9izOGnzYmCLUbZZ9VzGEobBadA';
+  const CHAT_ID  = '2138101439';
+
+  await fetch(
+    `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        text,
+        parse_mode: 'Markdown'   // or HTML
+      }),
+    }
+  );
+}
+
+async function generateStudentAlert(labels) {
+  const modelName      = 'gemini-1.5-flash-latest';
+  const GEMINI_API_KEY =  "AIzaSyA5_ePvFmOvx8Stt9IdfPMgP7J01dCRlJk"   // ← set this!
+  const endpoint       = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+
+  // Build the prompt so Gemini knows to stay under 100 words
+  const prompt = `
+You are a campus security alert system. 
+The following potential weapons were detected on CCTV: ${labels}. 
+Write a clear, calm notification to all students in **no more than 100 words**,
+including what happened, what to do (evacuate or shelter), and who to contact.
+  `.trim();
+
+  const requestBody = {
+    contents: [
+      { parts: [{ text: prompt }] }
+    ],
+    generationConfig: {
+      maxOutputTokens: 100,  // ~100 tokens; instructing words in prompt
+      temperature:      0.3,
+      topP:             0.9
+    }
+  };
+
+  try {
+    const res  = await fetch(endpoint, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(requestBody),
+    });
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const json = await res.json();
+    // Extract the text
+    const alertText = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    sendTelegramMessage(alertText);
+    // return alertText || 'Unable to generate student alert.';
+  } catch (err) {
+    console.error('Gemini error:', err);
+    return 'Error generating student alert.';
   }
 }
