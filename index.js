@@ -32509,7 +32509,7 @@ async function sendToGemini(dets) {
   // Use a valid model name. 'gemini-1.5-flash-latest' is a common choice.
   // The user originally had 'gemini-2.0-flash' which might not be a valid public model name yet.
   const modelName = "gemini-1.5-flash-latest";
-  const GEMINI_API_KEY = "AIzaSyA5_ePvFmOvx8Stt9IdfPMgP7J01dCRlJk";
+  const GEMINI_API_KEY = "";
   const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
   await generateStudentAlert(labels);
@@ -32619,8 +32619,8 @@ async function sendToGemini(dets) {
 }
 
 async function sendTelegramMessage(text) {
-  const BOT_TOKEN = '8189478565:AAGqvyVkS9izOGnzYmCLUbZZ9VzGEobBadA';
-  const CHAT_ID  = '2138101439';
+  const BOT_TOKEN = '';
+  const CHAT_ID  = '';
 
   await fetch(
     `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
@@ -32638,7 +32638,7 @@ async function sendTelegramMessage(text) {
 
 async function generateStudentAlert(labels) {
   const modelName      = 'gemini-1.5-flash-latest';
-  const GEMINI_API_KEY =  "AIzaSyA5_ePvFmOvx8Stt9IdfPMgP7J01dCRlJk"   // ← set this!
+  const GEMINI_API_KEY =  ""   // ← set this!
   const endpoint       = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
   // Build the prompt so Gemini knows to stay under 100 words
