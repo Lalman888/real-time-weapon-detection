@@ -32423,7 +32423,7 @@ navigator.mediaDevices
       { width: a, height: u } = n.getSettings();
     (canvas.width = a), (canvas.height = u);
     const c = a / u,
-      [f, s] = c > 720 / 405 ? [720, 720 / c] : [405 * c, 405];
+    [f, s] = c > 1280 / 720 ? [1280, 1280 / c] : [720 * c, 720];
     (container.style.width = `${f}px`),
       (container.style.height = `${s}px`),
       window.requestAnimationFrame(updateCanvas);
