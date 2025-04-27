@@ -32305,6 +32305,9 @@ class AutoProcessor {
 }
 env$1.allowLocalModels = !1;
 env$1.backends.onnx.wasm.proxy = !0;
+// env$1.allowLocalModels = false;
+// env$1.backends.onnx.wasm.proxy = true;
+
 const status = document.getElementById("status"),
   container = document.getElementById("container"),
   overlay = document.getElementById("overlay"),
@@ -32315,7 +32318,10 @@ const status = document.getElementById("status"),
   sizeSlider = document.getElementById("size"),
   sizeLabel = document.getElementById("size-value");
 status.textContent = "Loading model...";
+const logList = document.getElementById("logList");
+const aiText = document.getElementById("aiText");
 const model_id = "Xenova/gelan-c_all",
+  // const LOCAL_MODEL_PATH = "/model";
   model = await AutoModel.from_pretrained(model_id),
   processor = await AutoProcessor.from_pretrained(model_id);
 let threshold = 0.25;
@@ -32355,24 +32361,38 @@ const COLOURS = [
   "#E64A19",
   "#272A34",
 ];
-function renderBox([b, n, a, u, c, f], [s, h]) {
+async function renderBox([b, n, a, u, c, f], [s, h]) {
   if (c < threshold) return;
   // Get the detection label from your model's configuration
   const label = model.config.id2label[f];
-  console.log(label)
-  if (label.toLowerCase().includes("knife") || label.toLowerCase().includes("gun")) {
+  console.log(label);
+  if (
+    label.toLowerCase().includes("knife") ||
+    label.toLowerCase().includes("gun")
+  ) {
     // Play an audio alert (ensure alert.mp3 is available in your assets)
+    // near the top of your file:
+    let lastAlertTime = 0;
+    const COOLDOWN = 40_000; // 40s
+
     const audio = new Audio("alarm.mp3");
     audio.play();
 
     // Update the status message
-    status.textContent = `Alert: ${label} detected!`;
+    status.textContent = `🚨 Alert: ${label} detected!`;
+    const now = Date.now();
+    if (now - lastAlertTime > COOLDOWN) {
+      lastAlertTime = now;
+
+      const weaponDets = [{ label, score: c }];
+      logDetection(weaponDets);
+      await sendToGemini(weaponDets);
+    }
 
     // Optionally, show a browser alert (be cautious with alerts on live streams)
     // alert(`Dangerous object detected: ${label}`);
   }
 
-  
   const p = COLOURS[f % COLOURS.length],
     l = document.createElement("div");
   (l.className = "bounding-box"),
@@ -32395,26 +32415,56 @@ let isProcessing = !1,
 const context = canvas.getContext("2d", { willReadFrequently: !0 });
 function updateCanvas() {
   const { width: b, height: n } = canvas;
-  context.drawImage(video, 0, 0, b, n),
-    isProcessing ||
-      ((isProcessing = !0),
-      (async function () {
-        const a = context.getImageData(0, 0, b, n).data,
-          u = new RawImage(a, b, n, 4),
-          c = await processor(u),
-          { outputs: f } = await model(c);
-        overlay.innerHTML = "";
-        const s = c.reshaped_input_sizes[0].reverse();
-        if (
-          (f.tolist().forEach((h) => renderBox(h, s)), previousTime !== void 0)
-        ) {
-          const h = 1e3 / (performance.now() - previousTime);
-          status.textContent = `FPS: ${h.toFixed(2)}`;
+  context.drawImage(video, 0, 0, b, n);
+
+  if (!isProcessing) {
+    isProcessing = true;
+
+    (async function () {
+      // grab frame & run through model
+      const a = context.getImageData(0, 0, b, n).data,
+        u = new RawImage(a, b, n, 4),
+        c = await processor(u),
+        { outputs: f } = await model(c);
+
+      overlay.innerHTML = "";
+      const s = c.reshaped_input_sizes[0].reverse();
+
+      // collect detections for logging & AI
+      const dets = [];
+
+      f.tolist().forEach((h) => {
+        // draw each box
+        renderBox(h, s);
+
+        // if above threshold, stash for log/AI
+        const score = h[4],
+          classId = h[5];
+        if (score >= threshold) {
+          const label = model.config.id2label[classId] || `#${classId}`;
+          dets.push({ label, score });
         }
-        (previousTime = performance.now()), (isProcessing = !1);
-      })()),
-    window.requestAnimationFrame(updateCanvas);
+      });
+
+      // update FPS display
+      if (previousTime !== void 0) {
+        const fps = 1e3 / (performance.now() - previousTime);
+        status.textContent = `FPS: ${fps.toFixed(2)}`;
+      }
+      previousTime = performance.now();
+      isProcessing = false;
+
+      // log & call Gemini if we saw anything
+      // if (dets.length) {
+      //   logDetection(dets);
+      //   await sendToGemini(dets);
+      // }
+    })();
+  }
+
+  window.requestAnimationFrame(updateCanvas);
 }
+
 navigator.mediaDevices
   .getUserMedia({ video: !0 })
   .then((b) => {
@@ -32423,7 +32473,7 @@ navigator.mediaDevices
       { width: a, height: u } = n.getSettings();
     (canvas.width = a), (canvas.height = u);
     const c = a / u,
-    [f, s] = c > 1280 / 720 ? [1280, 1280 / c] : [720 * c, 720];
+      [f, s] = c > 1280 / 720 ? [1280, 1280 / c] : [720 * c, 720];
     (container.style.width = `${f}px`),
       (container.style.height = `${s}px`),
       window.requestAnimationFrame(updateCanvas);
@@ -32431,3 +32481,136 @@ navigator.mediaDevices
   .catch((b) => {
     alert(b);
   });
+
+function logDetection(dets) {
+  const ts = new Date().toLocaleTimeString();
+  for (let d of dets) {
+    const li = document.createElement("li");
+    li.textContent = `${ts} — ${d.label} @ ${(d.score * 100).toFixed(1)}%`;
+    logList.prepend(li);
+    if (logList.children.length > 50) logList.removeChild(logList.lastChild);
+  }
+}
+//   const GEMINI_API_KEY = "AIzaSyA5_ePvFmOvx8Stt9IdfPMgP7J01dCRlJk"
+// `The following weapons were detected in a security camera feed: ${labels}. Provide safety recommendations and context.`
+
+async function sendToGemini(dets) {
+  // Ensure dets is an array and has items before proceeding
+  if (!Array.isArray(dets) || dets.length === 0) {
+    console.warn("sendToGemini called with invalid or empty 'dets' array.");
+    // Optionally update UI or simply return
+    // aiText.textContent = 'No items detected.';
+    return;
+  }
+
+  const labels = dets.map((d) => d.label).join(", ");
+  aiText.textContent = "Thinking…"; // Provide user feedback
+
+  // Use a valid model name. 'gemini-1.5-flash-latest' is a common choice.
+  // The user originally had 'gemini-2.0-flash' which might not be a valid public model name yet.
+  const modelName = "gemini-1.5-flash-latest";
+  const GEMINI_API_KEY = "AIzaSyA5_ePvFmOvx8Stt9IdfPMgP7J01dCRlJk";
+  const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+
+  // --- Correct Request Body Structure ---
+  const requestBody = {
+    contents: [
+      {
+        parts: [
+          {
+            text: `You are an AI-driven campus security assistant integrated with the university’s CCTV network. 
+  The system has just detected these potential weapons: ${labels}.
+  
+  Using that context, produce a **detailed, structured response** with the following sections:
+  
+  1. **Detection Summary**  
+     - List each detected item, its approximate location (building/zone), camera ID, and timestamp.
+  
+  2. **Immediate Response Steps**  
+     - Step-by-step instructions for on-site security (approach protocols, safe distances, equipment to use).
+  
+  3. **Alert & Notification Protocol**  
+     - Exact text messages to send to campus police, emergency services, and senior administration, including all critical fields (weapon type, location coordinates, video/frame reference links).
+  
+  4. **Evacuation/Lockdown Procedures**  
+     - Clear broadcast language for students and staff, designated shelter-in-place areas or evacuation routes.
+  
+  5. **Evidence Preservation**  
+     - How to capture and archive relevant video clips, still images, and metadata (timestamp, camera angle) for legal review.
+  
+  6. **Communication Templates**  
+     - Short SMS, email, or in-app bulletin drafts to inform stakeholders without causing panic.
+  
+  7. **Post-Incident Review & Prevention**  
+     - Debrief steps, counseling referrals, and recommendations to improve future CCTV coverage and patrol schedules.
+  
+  Format your answer with numbered headings and bullet points under each section.`,
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      maxOutputTokens: 980,
+      temperature: 0.3,
+      topP: 0.9,
+    },
+  };
+
+  // Check if API key is present (basic check)
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === "YOUR_GEMINI_API_KEY") {
+    aiText.textContent = "Error: API Key is missing or not configured.";
+    console.error(
+      "Gemini API Key is missing or is still set to the placeholder value."
+    );
+    return; // Stop execution
+  }
+
+  try {
+    const res = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        // Content-Type is essential for JSON body
+        "Content-Type": "application/json",
+      },
+      // Ensure the body is stringified JSON using the correct structure
+      body: JSON.stringify(requestBody),
+    });
+
+    // --- Improved Error Handling: Check for non-OK HTTP status ---
+    if (!res.ok) {
+      let errorBody = await res.text(); // Try to get error details from response body
+      try {
+        // Attempt to parse as JSON for structured error messages
+        const errorJson = JSON.parse(errorBody);
+        errorBody = errorJson.error?.message || JSON.stringify(errorJson); // Extract message if possible
+      } catch (e) {
+        // If body wasn't JSON or parsing failed, use the raw text
+        console.warn("Could not parse error response as JSON.");
+      }
+      // Throw an error to be caught by the catch block
+      throw new Error(
+        `API request failed with status ${res.status}: ${errorBody}`
+      );
+    }
+
+    // --- Correct Response Parsing ---
+    const json = await res.json();
+
+    // Extract text from the correct path in the Gemini API response
+    const responseText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    // Update UI with the response or a fallback message
+    aiText.textContent =
+      responseText?.length > 0
+        ? marked.parse(responseText?.trim())
+        : "No valid AI response content received.";
+    const html = marked.parse(responseText.trim());
+    aiText.innerHTML = html;
+  } catch (err) {
+    // Update UI and log the error
+    aiText.textContent = "AI request failed.";
+    console.error("Error during Gemini API call:", err);
+    // You could potentially display err.message in the UI for more specific feedback
+    // aiText.textContent = `AI request failed: ${err.message}`;
+  }
+}

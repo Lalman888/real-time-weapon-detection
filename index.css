@@ -14,7 +14,7 @@ body {
     padding: 16px 32px
 }
 
-body,
+/* body, */
 #container {
     display: flex;
     flex-direction: column;
@@ -81,3 +81,28 @@ canvas {
     margin: -16px 0 0 -2px;
     padding: 1px
 }
+
+section {
+    background: #fff;
+    padding: 1rem;
+    margin: 1rem;
+    border-radius: 4px;
+  }
+  
+  section h2 {
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+  }
+  
+  #logList {
+    list-style: disc inside;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+  
+  #aiResponse pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+  }
